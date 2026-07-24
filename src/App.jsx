@@ -93,6 +93,9 @@ function Dashboard({ usuario, onSalir }) {
   const [meserosLista, setMeserosLista] = useState([])
   const [pedidosRecientes, setPedidosRecientes] = useState([])
   const [detalle, setDetalle] = useState(null)
+  const [detalleStat, setDetalleStat] = useState(null)
+  const [ventasHoyDetalle, setVentasHoyDetalle] = useState([])
+  const [propinasHoyDetalle, setPropinasHoyDetalle] = useState([])
   const [chatCanal, setChatCanal] = useState(null)
   const [mensajesChat, setMensajesChat] = useState([])
   const [textoChat, setTextoChat] = useState('')
@@ -110,12 +113,22 @@ function Dashboard({ usuario, onSalir }) {
     const { data: solicitudesData } = await supabase.from('solicitudes').select('id, mesa_id, tipo, created_at').eq('bar_id', usuario.bar_id).eq('atendida', false).order('created_at', { ascending: true })
     setSolicitudes(solicitudesData || [])
 
-    const { data: entregadosHoy } = await supabase.from('pedidos').select('total').eq('bar_id', usuario.bar_id).eq('estado', 'entregado').gte('created_at', inicioDeHoy())
+    const { data: entregadosHoy } = await supabase
+      .from('pedidos')
+      .select('id, total, created_at, mesas(numero), pedido_items(cantidad, productos(nombre))')
+      .eq('bar_id', usuario.bar_id).eq('estado', 'entregado').gte('created_at', inicioDeHoy())
+      .order('created_at', { ascending: false })
     setVentasHoy((entregadosHoy || []).reduce((s, p) => s + Number(p.total), 0))
+    setVentasHoyDetalle(entregadosHoy || [])
 
-    const { data: propinasData } = await supabase.from('propinas').select('monto, pedidos!inner(bar_id, created_at)').eq('pedidos.bar_id', usuario.bar_id)
+    const { data: meserosParaPropinas } = await supabase.from('usuarios_bar').select('id, nombre').eq('bar_id', usuario.bar_id).eq('rol', 'mesero')
+    const nombreMeseroPorId = {}
+    ;(meserosParaPropinas || []).forEach((m) => { nombreMeseroPorId[m.id] = m.nombre })
+    const { data: propinasData } = await supabase.from('propinas').select('monto, calificacion, mesero_id, pedidos!inner(bar_id, created_at, mesas(numero))').eq('pedidos.bar_id', usuario.bar_id)
     const hoyMs = new Date(inicioDeHoy()).getTime()
-    setPropinasHoy((propinasData || []).filter((p) => new Date(p.pedidos.created_at).getTime() >= hoyMs).reduce((s, p) => s + Number(p.monto), 0))
+    const propinasHoyLista = (propinasData || []).filter((p) => new Date(p.pedidos.created_at).getTime() >= hoyMs)
+    setPropinasHoy(propinasHoyLista.reduce((s, p) => s + Number(p.monto), 0))
+    setPropinasHoyDetalle(propinasHoyLista.map((p) => ({ ...p, meseroNombre: nombreMeseroPorId[p.mesero_id] || 'Sin asignar' })))
 
     const { data: pagosData } = await supabase.from('pagos').select('id, metodo, monto, comprobante_url, pedido_id, pedidos!inner(bar_id, mesa_id, mesas(numero))').eq('pedidos.bar_id', usuario.bar_id).eq('confirmado', false)
     setPagosPendientes(pagosData || [])
@@ -256,10 +269,10 @@ function Dashboard({ usuario, onSalir }) {
           )}
 
           <div className="stats-grid">
-            <div className="stat-card"><div className="stat-valor">{money(ventasHoy)}</div><div className="stat-label">Ventas de hoy</div></div>
-            <div className="stat-card"><div className="stat-valor">{money(ventasHoy * (bar?.comision_pct || 0.03))}</div><div className="stat-label">Comisión Ronda</div></div>
-            <div className="stat-card"><div className="stat-valor">{money(propinasHoy)}</div><div className="stat-label">Propinas registradas</div></div>
-            <div className="stat-card"><div className="stat-valor">{pagosPendientes.length}</div><div className="stat-label">Pagos por confirmar</div></div>
+            <div className="stat-card" onClick={() => setDetalleStat('ventas')}><div className="stat-valor">{money(ventasHoy)}</div><div className="stat-label">Ventas de hoy</div></div>
+            <div className="stat-card" onClick={() => setDetalleStat('comision')}><div className="stat-valor">{money(ventasHoy * (bar?.comision_pct || 0.03))}</div><div className="stat-label">Comisión Ronda</div></div>
+            <div className="stat-card" onClick={() => setDetalleStat('propinas')}><div className="stat-valor">{money(propinasHoy)}</div><div className="stat-label">Propinas registradas</div></div>
+            <div className="stat-card" onClick={() => setDetalleStat('pagos')}><div className="stat-valor">{pagosPendientes.length}</div><div className="stat-label">Pagos por confirmar</div></div>
           </div>
 
           <h2 className="seccion-titulo">Mapa del bar</h2>
@@ -356,6 +369,64 @@ function Dashboard({ usuario, onSalir }) {
             <button className="btn-secundario" onClick={() => abrirChat(`mesa-${detalle.mesa.id}`, `💬 Mesa ${detalle.mesa.numero}`)}>💬 Chat con esta mesa</button>
             {!detalle.pedido && <button className="btn-exito" onClick={cerrarMesa}>🧾 Cerrar mesa (cuenta pagada)</button>}
             <button className="btn-cerrar" onClick={() => setDetalle(null)}>Cerrar</button>
+          </div>
+        </div>
+      )}
+
+      {detalleStat && (
+        <div className="modal-overlay" onClick={() => setDetalleStat(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            {detalleStat === 'ventas' && (
+              <>
+                <h3>Ventas de hoy</h3>
+                <div className="historial-scroll">
+                  {ventasHoyDetalle.length === 0 && <p className="vacio">Todavía no hay ventas entregadas hoy.</p>}
+                  {ventasHoyDetalle.map((p) => (
+                    <div key={p.id} className="cuenta-ronda">
+                      <div className="item-fila cuenta-fila-titulo">
+                        <span>Mesa {p.mesas?.numero} · {new Date(p.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>{money(p.total)}</span>
+                      </div>
+                      {p.pedido_items.map((it, j) => <div key={j} className="cuenta-fila-item"><span>{it.cantidad}x {it.productos?.nombre}</span></div>)}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {detalleStat === 'comision' && (
+              <>
+                <h3>Comisión Ronda</h3>
+                <div className="historial-scroll">
+                  {ventasHoyDetalle.length === 0 && <p className="vacio">Todavía no hay ventas entregadas hoy.</p>}
+                  {ventasHoyDetalle.map((p) => (
+                    <div key={p.id} className="item-fila"><span>Mesa {p.mesas?.numero} — {money(p.total)}</span><strong>{money(p.total * (bar?.comision_pct || 0.03))}</strong></div>
+                  ))}
+                </div>
+              </>
+            )}
+            {detalleStat === 'propinas' && (
+              <>
+                <h3>Propinas de hoy</h3>
+                <div className="historial-scroll">
+                  {propinasHoyDetalle.length === 0 && <p className="vacio">Todavía no hay propinas hoy.</p>}
+                  {propinasHoyDetalle.map((p, i) => (
+                    <div key={i} className="item-fila"><span>{p.meseroNombre}{p.calificacion ? ` · ${'★'.repeat(p.calificacion)}` : ''}</span><strong>{money(p.monto)}</strong></div>
+                  ))}
+                </div>
+              </>
+            )}
+            {detalleStat === 'pagos' && (
+              <>
+                <h3>Pagos por confirmar</h3>
+                <div className="historial-scroll">
+                  {pagosPendientes.length === 0 && <p className="vacio">Todos los pagos están confirmados ✅</p>}
+                  {pagosPendientes.map((p) => (
+                    <div key={p.id} className="item-fila"><span>Mesa {p.pedidos?.mesas?.numero} · {p.metodo}</span><strong>{money(p.monto)}</strong></div>
+                  ))}
+                </div>
+              </>
+            )}
+            <button className="btn-cerrar" onClick={() => setDetalleStat(null)}>Cerrar</button>
           </div>
         </div>
       )}
