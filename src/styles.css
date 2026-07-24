@@ -61,7 +61,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .aviso-item { background: #3a2f1a; color: #e0b94c; border: none; border-radius: 10px; padding: 12px; text-align: left; cursor: pointer; }
 
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-.stat-card { background: var(--card); border: 1px solid var(--card-borde); border-radius: 14px; padding: 16px; }
+.stat-card { background: var(--card); border: 1px solid var(--card-borde); border-radius: 14px; padding: 16px; cursor: pointer; }
+.cuenta-ronda { border-bottom: 1px solid var(--card-borde); padding-bottom: 8px; margin-bottom: 8px; }
+.cuenta-fila-titulo { font-weight: 700; font-size: 14px; padding: 8px 0 4px; }
+.cuenta-fila-item { display: flex; justify-content: space-between; padding: 3px 0 3px 14px; font-size: 13px; color: var(--text-dim); }
 .stat-valor { color: var(--accent); font-size: 20px; font-weight: 800; }
 .stat-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; margin-top: 4px; }
 
