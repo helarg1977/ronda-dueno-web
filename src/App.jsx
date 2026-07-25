@@ -42,6 +42,7 @@ export default function App() {
 
   if (cargandoSesion) return <div className="center-msg"><div className="spinner" /></div>
   if (!usuario) return <Login onLogin={(u) => { guardarSesion(u); setUsuario(u) }} />
+  if (usuario.esSuperAdmin) return <SuperAdminDashboard admin={usuario} onSalir={() => { cerrarSesion(); setUsuario(null) }} />
   return <Dashboard usuario={usuario} onSalir={() => { cerrarSesion(); setUsuario(null) }} />
 }
 
@@ -55,7 +56,16 @@ function Login({ onLogin }) {
   async function entrar(e) {
     e.preventDefault()
     setCargando(true); setError('')
-    const { data, error } = await supabase.rpc('login_usuario_bar', { p_telefono: telefono.trim(), p_pin: pin.trim() })
+    const tel = telefono.trim(); const p = pin.trim()
+
+    const { data: superAdminData } = await supabase.rpc('login_super_admin', { p_telefono: tel, p_pin: p })
+    if (superAdminData && superAdminData.length > 0) {
+      setCargando(false)
+      onLogin({ ...superAdminData[0], telefono: tel, pin: p, esSuperAdmin: true })
+      return
+    }
+
+    const { data, error } = await supabase.rpc('login_usuario_bar', { p_telefono: tel, p_pin: p })
     setCargando(false)
     if (error || !data || data.length === 0) { setError('El celular o el PIN no son correctos.'); return }
     onLogin(data[0])
@@ -518,3 +528,124 @@ function Informes({ usuario, comisionPct }) {
     </main>
   )
 }
+
+function SuperAdminDashboard({ admin, onSalir }) {
+  const [bares, setBares] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [editando, setEditando] = useState(null)
+  const [nombreEdit, setNombreEdit] = useState('')
+  const [comisionEdit, setComisionEdit] = useState('')
+
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    const { data, error } = await supabase.rpc('admin_listar_bares', { p_telefono: admin.telefono, p_pin: admin.pin })
+    if (!error) setBares(data || [])
+    setCargando(false)
+  }, [admin.telefono, admin.pin])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  async function togglePausa(bar) {
+    await supabase.rpc('admin_actualizar_bar', {
+      p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id,
+      p_activo: !bar.activo, p_nombre: null, p_comision_pct: null,
+    })
+    cargar()
+  }
+
+  function abrirEdicion(bar) {
+    setEditando(bar.id); setNombreEdit(bar.nombre); setComisionEdit(String(bar.comision_pct))
+  }
+
+  async function guardarEdicion(bar) {
+    await supabase.rpc('admin_actualizar_bar', {
+      p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id,
+      p_activo: bar.activo, p_nombre: nombreEdit.trim(), p_comision_pct: Number(comisionEdit),
+    })
+    setEditando(null)
+    cargar()
+  }
+
+  async function eliminarBar(bar) {
+    if (!window.confirm(`¿Eliminar "${bar.nombre}" por completo? Esto borra TODOS sus datos (mesas, pedidos, empleados, historial). No se puede deshacer.`)) return
+    if (!window.confirm(`Confirma otra vez: vas a borrar "${bar.nombre}" para siempre.`)) return
+    await supabase.rpc('admin_eliminar_bar', { p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id })
+    cargar()
+  }
+
+  const totalNegocios = bares.length
+  const totalVentas = bares.reduce((s, b) => s + Number(b.ventas_totales), 0)
+  const totalComisionGenerada = bares.reduce((s, b) => s + Number(b.comision_generada), 0)
+  const totalComisionPagada = bares.reduce((s, b) => s + Number(b.comision_pagada), 0)
+  const barMasProduce = [...bares].sort((a, b) => b.comision_generada - a.comision_generada)[0]
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div>
+          <div className="header-titulo">Ronda — Super Admin</div>
+          <div className="header-sub">Hola, {admin.nombre}</div>
+        </div>
+        <button className="btn-secundario" onClick={onSalir}>Salir</button>
+      </header>
+
+      <main className="contenido">
+        <div className="stats-grid">
+          <div className="stat-card"><div className="stat-valor">{totalNegocios}</div><div className="stat-label">Bares vinculados</div></div>
+          <div className="stat-card"><div className="stat-valor">{money(totalVentas)}</div><div className="stat-label">Ventas totales (histórico)</div></div>
+          <div className="stat-card"><div className="stat-valor">{money(totalComisionGenerada)}</div><div className="stat-label">Comisión generada</div></div>
+          <div className="stat-card"><div className="stat-valor">{money(totalComisionPagada)}</div><div className="stat-label">Comisión ya pagada</div></div>
+        </div>
+
+        {barMasProduce && (
+          <div className="card" style={{ marginBottom: 24 }}>
+            <p className="subtitulo">🏆 El que más te produce</p>
+            <p>{barMasProduce.nombre} — {money(barMasProduce.comision_generada)} en comisión generada</p>
+          </div>
+        )}
+
+        <h2 className="seccion-titulo">Negocios vinculados</h2>
+        {cargando && <p className="vacio">Cargando…</p>}
+        {!cargando && bares.length === 0 && <p className="vacio">Todavía no hay bares registrados.</p>}
+        {bares.map((bar) => {
+          const pendiente = bar.comision_generada - bar.comision_pagada
+          return (
+            <div key={bar.id} className="card" style={{ marginBottom: 12 }}>
+              {editando === bar.id ? (
+                <>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Nombre</label>
+                  <input className="chat-input" style={{ width: '100%', marginBottom: 8 }} value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} />
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Comisión (ej: 0.03 = 3%)</label>
+                  <input className="chat-input" style={{ width: '100%', marginBottom: 10 }} value={comisionEdit} onChange={(e) => setComisionEdit(e.target.value)} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-primario" style={{ flex: 1 }} onClick={() => guardarEdicion(bar)}>Guardar</button>
+                    <button className="btn-secundario" onClick={() => setEditando(null)}>Cancelar</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: 17 }}>{bar.nombre}</strong>
+                    <span className="pill" style={{ background: bar.activo ? '#1a3a2a' : '#3a1a1a', color: bar.activo ? 'var(--exito)' : '#e05c5c' }}>
+                      {bar.activo ? 'Activo' : 'Pausado'}
+                    </span>
+                  </div>
+                  <div className="item-fila"><span>Ventas totales</span><strong>{money(bar.ventas_totales)}</strong></div>
+                  <div className="item-fila"><span>Comisión generada ({Math.round(bar.comision_pct * 100)}%)</span><strong>{money(bar.comision_generada)}</strong></div>
+                  <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
+                  <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
+                    <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
+                    <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => eliminarBar(bar)}>🗑️ Eliminar</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </main>
+    </div>
+  )
+}
+
