@@ -77,7 +77,7 @@ function Login({ onLogin }) {
         <h1 className="login-titulo">Ronda</h1>
         <p className="login-subtitulo">Panel del dueño — versión computador</p>
         <label>Número de celular</label>
-        <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="3001234567" inputMode="tel" />
+        <input value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="3001234567" inputMode="numeric" maxLength={10} />
         <label>PIN</label>
         <div className="fila-pin">
           <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" type={verPin ? 'text' : 'password'} inputMode="numeric" />
