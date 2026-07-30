@@ -108,6 +108,14 @@ function Dashboard({ usuario, onSalir }) {
   const [propinasHoyDetalle, setPropinasHoyDetalle] = useState([])
   const [chatCanal, setChatCanal] = useState(null)
   const [mensajesChat, setMensajesChat] = useState([])
+  const [anuncioPlataforma, setAnuncioPlataforma] = useState(null)
+
+  useEffect(() => {
+    supabase.from('anuncios_plataforma').select('id, mensaje').order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => {
+        if (data && localStorage.getItem('ronda_anuncio_visto') !== data.id) setAnuncioPlataforma(data)
+      })
+  }, [])
   const [textoChat, setTextoChat] = useState('')
 
   const cargar = useCallback(async () => {
@@ -260,6 +268,18 @@ function Dashboard({ usuario, onSalir }) {
           <button className="btn-secundario" onClick={onSalir}>Salir</button>
         </div>
       </header>
+
+      {anuncioPlataforma && (
+        <div className="banner-soporte" style={{ background: '#1a2e26', color: '#3ecf8e' }}>
+          📢 {anuncioPlataforma.mensaje}
+          <button
+            className="btn-secundario"
+            onClick={() => { localStorage.setItem('ronda_anuncio_visto', anuncioPlataforma.id); setAnuncioPlataforma(null) }}
+          >
+            Entendido
+          </button>
+        </div>
+      )}
 
       <nav className="tabs">
         <button className={`tab ${vista === 'panel' ? 'activo' : ''}`} onClick={() => setVista('panel')}>📊 Panel</button>
@@ -535,11 +555,16 @@ function SuperAdminDashboard({ admin, onSalir }) {
   const [editando, setEditando] = useState(null)
   const [nombreEdit, setNombreEdit] = useState('')
   const [comisionEdit, setComisionEdit] = useState('')
+  const [verComoUsuario, setVerComoUsuario] = useState(null)
+  const [anuncios, setAnuncios] = useState([])
+  const [nuevoAnuncio, setNuevoAnuncio] = useState('')
 
   const cargar = useCallback(async () => {
     setCargando(true)
     const { data, error } = await supabase.rpc('admin_listar_bares', { p_telefono: admin.telefono, p_pin: admin.pin })
     if (!error) setBares(data || [])
+    const { data: anunciosData } = await supabase.from('anuncios_plataforma').select('id, mensaje, created_at').order('created_at', { ascending: false }).limit(10)
+    setAnuncios(anunciosData || [])
     setCargando(false)
   }, [admin.telefono, admin.pin])
 
@@ -566,6 +591,25 @@ function SuperAdminDashboard({ admin, onSalir }) {
     cargar()
   }
 
+  async function publicarAnuncio() {
+    if (!nuevoAnuncio.trim()) return
+    await supabase.from('anuncios_plataforma').insert({ mensaje: nuevoAnuncio.trim() })
+    setNuevoAnuncio('')
+    cargar()
+  }
+
+  async function borrarAnuncio(id) {
+    if (!window.confirm('¿Borrar este anuncio?')) return
+    await supabase.from('anuncios_plataforma').delete().eq('id', id)
+    cargar()
+  }
+
+  async function verComoBar(bar) {
+    const { data, error } = await supabase.rpc('admin_entrar_como_bar', { p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id })
+    if (error || !data || data.length === 0) { window.alert('Este negocio no tiene un dueño activo para entrar a ver.'); return }
+    setVerComoUsuario(data[0])
+  }
+
   async function eliminarBar(bar) {
     if (!window.confirm(`¿Eliminar "${bar.nombre}" por completo? Esto borra TODOS sus datos (mesas, pedidos, empleados, historial). No se puede deshacer.`)) return
     if (!window.confirm(`Confirma otra vez: vas a borrar "${bar.nombre}" para siempre.`)) return
@@ -581,6 +625,16 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
   return (
     <div className="app">
+      {verComoUsuario && (
+        <div className="banner-soporte">
+          🔧 Modo soporte — viendo como <strong>{verComoUsuario.nombre}</strong>
+          <button className="btn-secundario" onClick={() => setVerComoUsuario(null)}>← Volver a Super Admin</button>
+        </div>
+      )}
+      {verComoUsuario ? (
+        <Dashboard usuario={verComoUsuario} onSalir={() => setVerComoUsuario(null)} />
+      ) : (
+      <>
       <header className="header">
         <div>
           <div className="header-titulo">Ronda — Super Admin</div>
@@ -634,7 +688,8 @@ function SuperAdminDashboard({ admin, onSalir }) {
                   <div className="item-fila"><span>Comisión generada ({Math.round(bar.comision_pct * 100)}%)</span><strong>{money(bar.comision_generada)}</strong></div>
                   <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
                   <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <button className="btn-secundario" onClick={() => verComoBar(bar)}>👁️ Ver como este negocio</button>
                     <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
                     <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
                     <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => eliminarBar(bar)}>🗑️ Eliminar</button>
@@ -644,7 +699,28 @@ function SuperAdminDashboard({ admin, onSalir }) {
             </div>
           )
         })}
+
+        <h2 className="seccion-titulo">📢 Anuncios a todos los dueños</h2>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <textarea
+            className="chat-input" style={{ width: '100%', minHeight: 70 }}
+            value={nuevoAnuncio} onChange={(e) => setNuevoAnuncio(e.target.value)}
+            placeholder="Ej: Este viernes actualizamos la app con mejoras nuevas 🎉"
+          />
+          <button className="btn-primario" style={{ marginTop: 8 }} onClick={publicarAnuncio}>Publicar anuncio</button>
+        </div>
+        {anuncios.map((a) => (
+          <div key={a.id} className="card" style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <p style={{ margin: 0 }}>{a.mensaje}</p>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>{new Date(a.created_at).toLocaleString('es-CO')}</p>
+            </div>
+            <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => borrarAnuncio(a.id)}>🗑️</button>
+          </div>
+        ))}
       </main>
+      </>
+      )}
     </div>
   )
 }
