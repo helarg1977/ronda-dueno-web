@@ -118,3 +118,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 @media (max-width: 700px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+.banner-soporte {
+  background: #3a2a12; color: #e0954c; padding: 12px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 700; font-size: 14px; gap: 12px;
+}
