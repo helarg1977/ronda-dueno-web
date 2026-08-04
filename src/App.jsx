@@ -42,8 +42,8 @@ export default function App() {
 
   if (cargandoSesion) return <div className="center-msg"><div className="spinner" /></div>
   if (!usuario) return <Login onLogin={(u) => { guardarSesion(u); setUsuario(u) }} />
-  if (usuario.esSuperAdmin) return <SuperAdminDashboard admin={usuario} onSalir={() => { cerrarSesion(); setUsuario(null) }} />
-  return <Dashboard usuario={usuario} onSalir={() => { cerrarSesion(); setUsuario(null) }} />
+  if (usuario.esSuperAdmin) return <SuperAdminDashboard admin={usuario} onSalir={async () => { await supabase.auth.signOut(); cerrarSesion(); setUsuario(null) }} />
+  return <Dashboard usuario={usuario} onSalir={async () => { await supabase.auth.signOut(); cerrarSesion(); setUsuario(null) }} />
 }
 
 function Login({ onLogin }) {
@@ -65,10 +65,16 @@ function Login({ onLogin }) {
       return
     }
 
-    const { data, error } = await supabase.rpc('login_usuario_bar', { p_telefono: tel, p_pin: p })
+    const { data: sesionData, error } = await supabase.functions.invoke('login-pin', {
+      body: { telefono: tel, pin: p },
+    })
     setCargando(false)
-    if (error || !data || data.length === 0) { setError('El celular o el PIN no son correctos.'); return }
-    onLogin(data[0])
+    if (error || sesionData?.error || !sesionData?.usuario) {
+      setError(sesionData?.error || 'El celular o el PIN no son correctos.')
+      return
+    }
+    await supabase.auth.setSession({ access_token: sesionData.access_token, refresh_token: sesionData.refresh_token })
+    onLogin(sesionData.usuario)
   }
 
   return (
@@ -605,9 +611,15 @@ function SuperAdminDashboard({ admin, onSalir }) {
   }
 
   async function verComoBar(bar) {
-    const { data, error } = await supabase.rpc('admin_entrar_como_bar', { p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id })
-    if (error || !data || data.length === 0) { window.alert('Este negocio no tiene un dueño activo para entrar a ver.'); return }
-    setVerComoUsuario(data[0])
+    const { data, error } = await supabase.functions.invoke('admin-entrar-como-bar', {
+      body: { telefono: admin.telefono, pin: admin.pin, bar_id: bar.id },
+    })
+    if (error || data?.error || !data?.usuario) {
+      window.alert(data?.error || 'Este negocio no tiene un dueño activo para entrar a ver.')
+      return
+    }
+    await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token })
+    setVerComoUsuario(data.usuario)
   }
 
   async function eliminarBar(bar) {
@@ -628,11 +640,11 @@ function SuperAdminDashboard({ admin, onSalir }) {
       {verComoUsuario && (
         <div className="banner-soporte">
           🔧 Modo soporte — viendo como <strong>{verComoUsuario.nombre}</strong>
-          <button className="btn-secundario" onClick={() => setVerComoUsuario(null)}>← Volver a Super Admin</button>
+          <button className="btn-secundario" onClick={async () => { await supabase.auth.signOut(); setVerComoUsuario(null) }}>← Volver a Super Admin</button>
         </div>
       )}
       {verComoUsuario ? (
-        <Dashboard usuario={verComoUsuario} onSalir={() => setVerComoUsuario(null)} />
+        <Dashboard usuario={verComoUsuario} onSalir={async () => { await supabase.auth.signOut(); setVerComoUsuario(null) }} />
       ) : (
       <>
       <header className="header">
