@@ -4,6 +4,13 @@ import { supabase, guardarSesion, leerSesion, cerrarSesion } from './supabaseCli
 function money(n) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
 }
+function costoRonda(monto) {
+  if (monto <= 10000) return 100
+  if (monto <= 50000) return 200
+  if (monto <= 100000) return 300
+  if (monto <= 200000) return 400
+  return 500
+}
 function inicioDeHoy() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString()
 }
@@ -306,7 +313,7 @@ function Dashboard({ usuario, onSalir }) {
 
           <div className="stats-grid">
             <div className="stat-card" onClick={() => setDetalleStat('ventas')}><div className="stat-valor">{money(ventasHoy)}</div><div className="stat-label">Ventas de hoy</div></div>
-            <div className="stat-card" onClick={() => setDetalleStat('comision')}><div className="stat-valor">{money(ventasHoy * (bar?.comision_pct || 0.03))}</div><div className="stat-label">Comisión Ronda</div></div>
+            <div className="stat-card" onClick={() => setDetalleStat('comision')}><div className="stat-valor">{money(ventasHoyDetalle.reduce((s, p) => s + costoRonda(Number(p.total)), 0))}</div><div className="stat-label">Costo por pedido</div></div>
             <div className="stat-card" onClick={() => setDetalleStat('propinas')}><div className="stat-valor">{money(propinasHoy)}</div><div className="stat-label">Propinas registradas</div></div>
             <div className="stat-card" onClick={() => setDetalleStat('pagos')}><div className="stat-valor">{pagosPendientes.length}</div><div className="stat-label">Pagos por confirmar</div></div>
           </div>
@@ -431,11 +438,11 @@ function Dashboard({ usuario, onSalir }) {
             )}
             {detalleStat === 'comision' && (
               <>
-                <h3>Comisión Ronda</h3>
+                <h3>Costo por pedido de hoy</h3>
                 <div className="historial-scroll">
                   {ventasHoyDetalle.length === 0 && <p className="vacio">Todavía no hay ventas entregadas hoy.</p>}
                   {ventasHoyDetalle.map((p) => (
-                    <div key={p.id} className="item-fila"><span>Mesa {p.mesas?.numero} — {money(p.total)}</span><strong>{money(p.total * (bar?.comision_pct || 0.03))}</strong></div>
+                    <div key={p.id} className="item-fila"><span>Mesa {p.mesas?.numero} — {money(p.total)}</span><strong>{money(costoRonda(Number(p.total)))}</strong></div>
                   ))}
                 </div>
               </>
@@ -495,6 +502,7 @@ function Dashboard({ usuario, onSalir }) {
 function Informes({ usuario, comisionPct }) {
   const [periodo, setPeriodo] = useState('hoy')
   const [ventas, setVentas] = useState(0)
+  const [costoTotal, setCostoTotal] = useState(0)
   const [numPedidos, setNumPedidos] = useState(0)
   const [propinas, setPropinas] = useState(0)
   const [porDia, setPorDia] = useState([])
@@ -506,6 +514,7 @@ function Informes({ usuario, comisionPct }) {
       const { data: pedidos } = await supabase.from('pedidos').select('id, total, created_at, pedido_items(cantidad, productos(nombre))').eq('bar_id', usuario.bar_id).eq('estado', 'entregado').gte('created_at', desde)
       const lista = pedidos || []
       setVentas(lista.reduce((s, p) => s + Number(p.total), 0))
+      setCostoTotal(lista.reduce((s, p) => s + costoRonda(Number(p.total)), 0))
       setNumPedidos(lista.length)
 
       const { data: prop } = await supabase.from('propinas').select('monto, pedidos!inner(bar_id, created_at)').eq('pedidos.bar_id', usuario.bar_id)
@@ -538,7 +547,7 @@ function Informes({ usuario, comisionPct }) {
       <div className="stats-grid">
         <div className="stat-card"><div className="stat-valor">{money(ventas)}</div><div className="stat-label">Ventas</div></div>
         <div className="stat-card"><div className="stat-valor">{numPedidos}</div><div className="stat-label">Pedidos entregados</div></div>
-        <div className="stat-card"><div className="stat-valor">{money(ventas * comisionPct)}</div><div className="stat-label">Comisión Ronda</div></div>
+        <div className="stat-card"><div className="stat-valor">{money(costoTotal)}</div><div className="stat-label">Costo por pedido</div></div>
         <div className="stat-card"><div className="stat-valor">{money(propinas)}</div><div className="stat-label">Propinas</div></div>
       </div>
       {productoTop && <div className="card"><p className="subtitulo">🍺 Producto estrella</p><p>{productoTop.nombre} — {productoTop.unidades} unidades</p></div>}
@@ -659,14 +668,14 @@ function SuperAdminDashboard({ admin, onSalir }) {
         <div className="stats-grid">
           <div className="stat-card"><div className="stat-valor">{totalNegocios}</div><div className="stat-label">Bares vinculados</div></div>
           <div className="stat-card"><div className="stat-valor">{money(totalVentas)}</div><div className="stat-label">Ventas totales (histórico)</div></div>
-          <div className="stat-card"><div className="stat-valor">{money(totalComisionGenerada)}</div><div className="stat-label">Comisión generada</div></div>
-          <div className="stat-card"><div className="stat-valor">{money(totalComisionPagada)}</div><div className="stat-label">Comisión ya pagada</div></div>
+          <div className="stat-card"><div className="stat-valor">{money(totalComisionGenerada)}</div><div className="stat-label">Costo por pedido generado</div></div>
+          <div className="stat-card"><div className="stat-valor">{money(totalComisionPagada)}</div><div className="stat-label">Ya pagado a Ronda</div></div>
         </div>
 
         {barMasProduce && (
           <div className="card" style={{ marginBottom: 24 }}>
             <p className="subtitulo">🏆 El que más te produce</p>
-            <p>{barMasProduce.nombre} — {money(barMasProduce.comision_generada)} en comisión generada</p>
+            <p>{barMasProduce.nombre} — {money(barMasProduce.comision_generada)} en costo por pedido generado</p>
           </div>
         )}
 
@@ -680,9 +689,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
               {editando === bar.id ? (
                 <>
                   <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Nombre</label>
-                  <input className="chat-input" style={{ width: '100%', marginBottom: 8 }} value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} />
-                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Comisión (ej: 0.03 = 3%)</label>
-                  <input className="chat-input" style={{ width: '100%', marginBottom: 10 }} value={comisionEdit} onChange={(e) => setComisionEdit(e.target.value)} />
+                  <input className="chat-input" style={{ width: '100%', marginBottom: 10 }} value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} />
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-primario" style={{ flex: 1 }} onClick={() => guardarEdicion(bar)}>Guardar</button>
                     <button className="btn-secundario" onClick={() => setEditando(null)}>Cancelar</button>
@@ -700,7 +707,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
                   <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
                   <div className="item-fila"><span>Mesas activas</span><strong>{bar.total_mesas}</strong></div>
                   <div className="item-fila"><span>Ventas totales</span><strong>{money(bar.ventas_totales)}</strong></div>
-                  <div className="item-fila"><span>Comisión generada ({Math.round(bar.comision_pct * 100)}%)</span><strong>{money(bar.comision_generada)}</strong></div>
+                  <div className="item-fila"><span>Costo por pedido generado</span><strong>{money(bar.comision_generada)}</strong></div>
                   <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
                   <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
