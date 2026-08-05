@@ -696,6 +696,9 @@ function SuperAdminDashboard({ admin, onSalir }) {
                       {bar.activo ? 'Activo' : 'Pausado'}
                     </span>
                   </div>
+                  <div className="item-fila"><span>Dueño</span><strong>{bar.nombre_dueno || '—'}</strong></div>
+                  <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
+                  <div className="item-fila"><span>Mesas activas</span><strong>{bar.total_mesas}</strong></div>
                   <div className="item-fila"><span>Ventas totales</span><strong>{money(bar.ventas_totales)}</strong></div>
                   <div className="item-fila"><span>Comisión generada ({Math.round(bar.comision_pct * 100)}%)</span><strong>{money(bar.comision_generada)}</strong></div>
                   <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
