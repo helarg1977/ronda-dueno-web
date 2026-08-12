@@ -40,6 +40,7 @@ const SIGUIENTE_ESTADO = {
   preparando: { siguiente: 'en_camino', boton: '🚶 Llevar a la mesa' },
   en_camino: { siguiente: 'entregado', boton: '📬 Marcar entregado' },
 }
+const ROLES_PANEL_DUENO = ['dueno', 'administrador']
 
 export default function App() {
   const [usuario, setUsuario] = useState(null)
@@ -50,6 +51,15 @@ export default function App() {
   if (cargandoSesion) return <div className="center-msg"><div className="spinner" /></div>
   if (!usuario) return <Login onLogin={(u) => { guardarSesion(u); setUsuario(u) }} />
   if (usuario.esSuperAdmin) return <SuperAdminDashboard admin={usuario} onSalir={async () => { await supabase.auth.signOut(); cerrarSesion(); setUsuario(null) }} />
+  if (!ROLES_PANEL_DUENO.includes(usuario.rol)) {
+    return (
+      <div className="center-msg" style={{ flexDirection: 'column', gap: 16, textAlign: 'center', padding: 24 }}>
+        <p style={{ fontSize: 18 }}>🚫 Este panel de computador es solo para el dueño del negocio.</p>
+        <p style={{ color: 'var(--text-dim)' }}>Si eres mesero, usa la app de Ronda en tu celular en vez de esto.</p>
+        <button className="btn-secundario" onClick={async () => { await supabase.auth.signOut(); cerrarSesion(); setUsuario(null) }}>Salir</button>
+      </div>
+    )
+  }
   return <Dashboard usuario={usuario} onSalir={async () => { await supabase.auth.signOut(); cerrarSesion(); setUsuario(null) }} />
 }
 
@@ -132,7 +142,7 @@ function Dashboard({ usuario, onSalir }) {
   const [textoChat, setTextoChat] = useState('')
 
   const cargar = useCallback(async () => {
-    const { data: barData } = await supabase.from('bares').select('nombre, comision_pct').eq('id', usuario.bar_id).maybeSingle()
+    const { data: barData } = await supabase.from('bares').select('nombre').eq('id', usuario.bar_id).maybeSingle()
     setBar(barData)
 
     const { data: mesasData } = await supabase.from('mesas').select('id, numero, sesion_actual, mesero_asignado_id, qr_code').eq('bar_id', usuario.bar_id).eq('activa', true).order('numero')
@@ -369,7 +379,7 @@ function Dashboard({ usuario, onSalir }) {
         </main>
       )}
 
-      {vista === 'informes' && <Informes usuario={usuario} comisionPct={bar?.comision_pct || 0.03} />}
+      {vista === 'informes' && <Informes usuario={usuario} />}
 
       {detalle && (
         <div className="modal-overlay" onClick={() => setDetalle(null)}>
@@ -499,7 +509,7 @@ function Dashboard({ usuario, onSalir }) {
   )
 }
 
-function Informes({ usuario, comisionPct }) {
+function Informes({ usuario }) {
   const [periodo, setPeriodo] = useState('hoy')
   const [ventas, setVentas] = useState(0)
   const [costoTotal, setCostoTotal] = useState(0)
@@ -569,7 +579,6 @@ function SuperAdminDashboard({ admin, onSalir }) {
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState(null)
   const [nombreEdit, setNombreEdit] = useState('')
-  const [comisionEdit, setComisionEdit] = useState('')
   const [verComoUsuario, setVerComoUsuario] = useState(null)
   const [anuncios, setAnuncios] = useState([])
   const [nuevoAnuncio, setNuevoAnuncio] = useState('')
@@ -594,13 +603,13 @@ function SuperAdminDashboard({ admin, onSalir }) {
   }
 
   function abrirEdicion(bar) {
-    setEditando(bar.id); setNombreEdit(bar.nombre); setComisionEdit(String(bar.comision_pct))
+    setEditando(bar.id); setNombreEdit(bar.nombre)
   }
 
   async function guardarEdicion(bar) {
     await supabase.rpc('admin_actualizar_bar', {
       p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id,
-      p_activo: bar.activo, p_nombre: nombreEdit.trim(), p_comision_pct: Number(comisionEdit),
+      p_activo: bar.activo, p_nombre: nombreEdit.trim(), p_comision_pct: null,
     })
     setEditando(null)
     cargar()
