@@ -75,23 +75,26 @@ function Login({ onLogin }) {
     setCargando(true); setError('')
     const tel = telefono.trim(); const p = pin.trim()
 
-    const { data: superAdminData } = await supabase.rpc('login_super_admin', { p_telefono: tel, p_pin: p })
-    if (superAdminData && superAdminData.length > 0) {
-      setCargando(false)
-      onLogin({ ...superAdminData[0], telefono: tel, pin: p, esSuperAdmin: true })
-      return
-    }
-
     const { data: sesionData, error } = await supabase.functions.invoke('login-pin', {
       body: { telefono: tel, pin: p },
     })
-    setCargando(false)
-    if (error || sesionData?.error || !sesionData?.usuario) {
-      setError(sesionData?.error || 'El celular o el PIN no son correctos.')
+    if (!error && !sesionData?.error && sesionData?.usuario) {
+      await supabase.auth.setSession({ access_token: sesionData.access_token, refresh_token: sesionData.refresh_token })
+      setCargando(false)
+      onLogin(sesionData.usuario)
       return
     }
-    await supabase.auth.setSession({ access_token: sesionData.access_token, refresh_token: sesionData.refresh_token })
-    onLogin(sesionData.usuario)
+
+    const { data: adminData, error: errorAdmin } = await supabase.functions.invoke('login-superadmin', {
+      body: { telefono: tel, pin: p },
+    })
+    setCargando(false)
+    if (errorAdmin || adminData?.error || !adminData?.admin) {
+      setError('El celular o el PIN no son correctos.')
+      return
+    }
+    await supabase.auth.setSession({ access_token: adminData.access_token, refresh_token: adminData.refresh_token })
+    onLogin(adminData.admin)
   }
 
   return (
@@ -585,19 +588,18 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
   const cargar = useCallback(async () => {
     setCargando(true)
-    const { data, error } = await supabase.rpc('admin_listar_bares', { p_telefono: admin.telefono, p_pin: admin.pin })
+    const { data, error } = await supabase.rpc('admin_listar_bares')
     if (!error) setBares(data || [])
     const { data: anunciosData } = await supabase.from('anuncios_plataforma').select('id, mensaje, created_at').order('created_at', { ascending: false }).limit(10)
     setAnuncios(anunciosData || [])
     setCargando(false)
-  }, [admin.telefono, admin.pin])
+  }, [])
 
   useEffect(() => { cargar() }, [cargar])
 
   async function togglePausa(bar) {
     await supabase.rpc('admin_actualizar_bar', {
-      p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id,
-      p_activo: !bar.activo, p_nombre: null, p_comision_pct: null,
+      p_bar_id: bar.id, p_activo: !bar.activo, p_nombre: null, p_comision_pct: null,
     })
     cargar()
   }
@@ -608,8 +610,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
   async function guardarEdicion(bar) {
     await supabase.rpc('admin_actualizar_bar', {
-      p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id,
-      p_activo: bar.activo, p_nombre: nombreEdit.trim(), p_comision_pct: null,
+      p_bar_id: bar.id, p_activo: bar.activo, p_nombre: nombreEdit.trim(), p_comision_pct: null,
     })
     setEditando(null)
     cargar()
@@ -630,7 +631,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
   async function verComoBar(bar) {
     const { data, error } = await supabase.functions.invoke('admin-entrar-como-bar', {
-      body: { telefono: admin.telefono, pin: admin.pin, bar_id: bar.id },
+      body: { bar_id: bar.id },
     })
     if (error || data?.error || !data?.usuario) {
       window.alert(data?.error || 'Este negocio no tiene un dueño activo para entrar a ver.')
@@ -643,7 +644,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
   async function eliminarBar(bar) {
     if (!window.confirm(`¿Eliminar "${bar.nombre}" por completo? Esto borra TODOS sus datos (mesas, pedidos, empleados, historial). No se puede deshacer.`)) return
     if (!window.confirm(`Confirma otra vez: vas a borrar "${bar.nombre}" para siempre.`)) return
-    await supabase.rpc('admin_eliminar_bar', { p_telefono: admin.telefono, p_pin: admin.pin, p_bar_id: bar.id })
+    await supabase.rpc('admin_eliminar_bar', { p_bar_id: bar.id })
     cargar()
   }
 
