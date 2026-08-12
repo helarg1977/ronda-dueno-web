@@ -646,10 +646,15 @@ function SuperAdminDashboard({ admin, onSalir }) {
     setVerComoUsuario(data.usuario)
   }
 
-  async function eliminarBar(bar) {
-    if (!window.confirm(`¿Eliminar "${bar.nombre}" por completo? Esto borra TODOS sus datos (mesas, pedidos, empleados, historial). No se puede deshacer.`)) return
-    if (!window.confirm(`Confirma otra vez: vas a borrar "${bar.nombre}" para siempre.`)) return
-    await supabase.rpc('admin_eliminar_bar', { p_bar_id: bar.id })
+  const [barABorrar, setBarABorrar] = useState(null)
+  const [textoConfirmarBorrado, setTextoConfirmarBorrado] = useState('')
+
+  async function eliminarBar() {
+    if (!barABorrar || textoConfirmarBorrado.trim() !== barABorrar.nombre) return
+    const { error } = await supabase.rpc('admin_eliminar_bar', { p_bar_id: barABorrar.id })
+    if (error) { window.alert('No se pudo eliminar: ' + error.message); return }
+    setBarABorrar(null)
+    setTextoConfirmarBorrado('')
     cargar()
   }
 
@@ -729,7 +734,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
                     <button className="btn-secundario" onClick={() => verComoBar(bar)}>👁️ Ver como este negocio</button>
                     <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
                     <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
-                    <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => eliminarBar(bar)}>🗑️ Eliminar</button>
+                    <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => { setBarABorrar(bar); setTextoConfirmarBorrado('') }}>🗑️ Eliminar</button>
                   </div>
                 </>
               )}
@@ -757,6 +762,33 @@ function SuperAdminDashboard({ admin, onSalir }) {
         ))}
       </main>
       </>
+      )}
+      {barABorrar && (
+        <div className="modal-overlay" onClick={() => setBarABorrar(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: '#e05c5c' }}>⚠️ Eliminar "{barABorrar.nombre}"</h3>
+            <p style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.5 }}>
+              Esto borra TODOS sus datos para siempre: mesas, pedidos, empleados, historial. No se puede deshacer.
+            </p>
+            <p style={{ fontSize: 14 }}>Para confirmar, escribe el nombre exacto del negocio:</p>
+            <input
+              className="chat-input" style={{ width: '100%', marginBottom: 14 }}
+              value={textoConfirmarBorrado} onChange={(e) => setTextoConfirmarBorrado(e.target.value)}
+              placeholder={barABorrar.nombre}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-secundario" onClick={() => setBarABorrar(null)}>Cancelar</button>
+              <button
+                className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c', opacity: textoConfirmarBorrado.trim() === barABorrar.nombre ? 1 : 0.4 }}
+                disabled={textoConfirmarBorrado.trim() !== barABorrar.nombre}
+                onClick={eliminarBar}
+              >
+                Eliminar para siempre
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
