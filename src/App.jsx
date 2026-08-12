@@ -342,10 +342,10 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
           )}
 
           <div className="stats-grid">
-            <div className="stat-card" onClick={() => setDetalleStat('ventas')}><div className="stat-valor">{money(ventasHoy)}</div><div className="stat-label">Ventas de hoy</div></div>
-            <div className="stat-card" onClick={() => setDetalleStat('comision')}><div className="stat-valor">{money(ventasHoyDetalle.reduce((s, p) => s + costoRonda(Number(p.total)), 0))}</div><div className="stat-label">Costo por pedido</div></div>
-            <div className="stat-card" onClick={() => setDetalleStat('propinas')}><div className="stat-valor">{money(propinasHoy)}</div><div className="stat-label">Propinas registradas</div></div>
-            <div className="stat-card" onClick={() => setDetalleStat('pagos')}><div className="stat-valor">{pagosPendientes.length}</div><div className="stat-label">Pagos por confirmar</div></div>
+            <div className="stat-card" role="button" tabIndex={0} onClick={() => setDetalleStat('ventas')} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setDetalleStat('ventas')}><div className="stat-valor">{money(ventasHoy)}</div><div className="stat-label">Ventas de hoy</div></div>
+            <div className="stat-card" role="button" tabIndex={0} onClick={() => setDetalleStat('comision')} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setDetalleStat('comision')}><div className="stat-valor">{money(ventasHoyDetalle.reduce((s, p) => s + costoRonda(Number(p.total)), 0))}</div><div className="stat-label">Costo por pedido</div></div>
+            <div className="stat-card" role="button" tabIndex={0} onClick={() => setDetalleStat('propinas')} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setDetalleStat('propinas')}><div className="stat-valor">{money(propinasHoy)}</div><div className="stat-label">Propinas registradas</div></div>
+            <div className="stat-card" role="button" tabIndex={0} onClick={() => setDetalleStat('pagos')} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setDetalleStat('pagos')}><div className="stat-valor">{pagosPendientes.length}</div><div className="stat-label">Pagos por confirmar</div></div>
           </div>
 
           <h2 className="seccion-titulo">Mapa del bar</h2>
