@@ -72,8 +72,18 @@ function Login({ onLogin }) {
 
   async function entrar(e) {
     e.preventDefault()
-    setCargando(true); setError('')
+    setError('')
     const tel = telefono.trim(); const p = pin.trim()
+
+    if (!/^\d{10}$/.test(tel)) {
+      setError('Escribe tu número de celular completo (10 dígitos).')
+      return
+    }
+    if (!p) {
+      setError('Escribe tu PIN.')
+      return
+    }
+    setCargando(true)
 
     const { data: sesionData, error } = await supabase.functions.invoke('login-pin', {
       body: { telefono: tel, pin: p },
@@ -328,7 +338,7 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
       </header>
 
       {anuncioPlataforma && (
-        <div className="banner-soporte" style={{ background: '#1a2e26', color: '#3ecf8e' }}>
+        <div className="banner-anuncio" style={{ background: '#1a2e26', color: '#3ecf8e' }}>
           📢 {anuncioPlataforma.mensaje}
           <button
             className="btn-secundario"
