@@ -179,12 +179,17 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
 
     const { data: meseros } = await supabase.from('usuarios_bar').select('id, nombre').eq('bar_id', usuario.bar_id).eq('rol', 'mesero').eq('activo', true)
     setMeserosLista(meseros || [])
-    const rankingCalc = await Promise.all((meseros || []).map(async (m) => {
-      const { data: suyos } = await supabase.from('pedidos').select('total, estado').eq('mesero_id', m.id)
-      const { data: props } = await supabase.from('propinas').select('monto').eq('mesero_id', m.id)
-      const entregados = (suyos || []).filter((p) => p.estado === 'entregado')
-      return { id: m.id, nombre: m.nombre, ventas: entregados.reduce((s, p) => s + Number(p.total), 0), entregados: entregados.length, propinas: (props || []).reduce((s, p) => s + Number(p.monto), 0) }
-    }))
+    const idsMeseros = (meseros || []).map((m) => m.id)
+    let rankingCalc = []
+    if (idsMeseros.length > 0) {
+      const { data: todosPedidos } = await supabase.from('pedidos').select('mesero_id, total, estado').in('mesero_id', idsMeseros)
+      const { data: todasPropinas } = await supabase.from('propinas').select('mesero_id, monto').in('mesero_id', idsMeseros)
+      rankingCalc = meseros.map((m) => {
+        const entregados = (todosPedidos || []).filter((p) => p.mesero_id === m.id && p.estado === 'entregado')
+        const propinasDelMesero = (todasPropinas || []).filter((p) => p.mesero_id === m.id)
+        return { id: m.id, nombre: m.nombre, ventas: entregados.reduce((s, p) => s + Number(p.total), 0), entregados: entregados.length, propinas: propinasDelMesero.reduce((s, p) => s + Number(p.monto), 0) }
+      })
+    }
     rankingCalc.sort((a, b) => b.ventas - a.ventas)
     setRanking(rankingCalc)
 
