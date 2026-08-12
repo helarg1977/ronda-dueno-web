@@ -125,3 +125,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   display: flex; justify-content: space-between; align-items: center;
   font-weight: 700; font-size: 14px; gap: 12px;
 }
+.banner-anuncio {
+  padding: 12px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 700; font-size: 14px; gap: 12px;
+}
