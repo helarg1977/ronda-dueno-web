@@ -174,7 +174,7 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
     setPropinasHoy(propinasHoyLista.reduce((s, p) => s + Number(p.monto), 0))
     setPropinasHoyDetalle(propinasHoyLista.map((p) => ({ ...p, meseroNombre: nombreMeseroPorId[p.mesero_id] || 'Sin asignar' })))
 
-    const { data: pagosData } = await supabase.from('pagos').select('id, metodo, monto, comprobante_url, pedido_id, pedidos!inner(bar_id, mesa_id, mesas(numero))').eq('pedidos.bar_id', usuario.bar_id).eq('confirmado', false)
+    const { data: pagosData } = await supabase.from('pagos').select('id, metodo, monto, monto_efectivo, monto_transferencia, comprobante_url, pedido_id, pedidos!inner(bar_id, mesa_id, mesas(numero))').eq('pedidos.bar_id', usuario.bar_id).eq('confirmado', false)
     setPagosPendientes(pagosData || [])
 
     const { data: meseros } = await supabase.from('usuarios_bar').select('id, nombre').eq('bar_id', usuario.bar_id).eq('rol', 'mesero').eq('activo', true)
@@ -221,7 +221,7 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
     if (pedido) {
       const { data: itemsData } = await supabase.from('pedido_items').select('id, cantidad, precio_unitario, productos(nombre)').eq('pedido_id', pedido.id)
       items = itemsData || []
-      const { data: pagoData } = await supabase.from('pagos').select('id, metodo, monto, comprobante_url, confirmado').eq('pedido_id', pedido.id).maybeSingle()
+      const { data: pagoData } = await supabase.from('pagos').select('id, metodo, monto, monto_efectivo, monto_transferencia, comprobante_url, confirmado').eq('pedido_id', pedido.id).maybeSingle()
       pago = pagoData || null
     }
     setDetalle({ mesa, pedido: pedido || null, items, historial: historial || [], pago })
@@ -424,7 +424,12 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
                 {SIGUIENTE_ESTADO[detalle.pedido.estado] && <button className="btn-primario" onClick={avanzarEstado}>{SIGUIENTE_ESTADO[detalle.pedido.estado].boton}</button>}
                 {detalle.pago && (
                   <div className="pago-box">
-                    <p className="subtitulo">Pago — {detalle.pago.metodo}</p>
+                    <p className="subtitulo">Pago — {detalle.pago.metodo === 'mixto' ? 'Mixto' : detalle.pago.metodo}</p>
+                    {detalle.pago.metodo === 'mixto' && (
+                      <p style={{ color: 'var(--text-dim)', fontSize: 14 }}>
+                        💵 {money(detalle.pago.monto_efectivo || 0)} + 📱 {money(detalle.pago.monto_transferencia || 0)}
+                      </p>
+                    )}
                     {detalle.pago.comprobante_url && <img src={detalle.pago.comprobante_url} alt="comprobante" className="comprobante-img" />}
                     {detalle.pago.confirmado ? <p className="pago-confirmado">✅ Pago confirmado</p> : <button className="btn-exito" onClick={confirmarPago}>Confirmar que recibí el pago</button>}
                   </div>
@@ -494,7 +499,7 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
                 <div className="historial-scroll">
                   {pagosPendientes.length === 0 && <p className="vacio">Todos los pagos están confirmados ✅</p>}
                   {pagosPendientes.map((p) => (
-                    <div key={p.id} className="item-fila"><span>Mesa {p.pedidos?.mesas?.numero} · {p.metodo}</span><strong>{money(p.monto)}</strong></div>
+                    <div key={p.id} className="item-fila"><span>Mesa {p.pedidos?.mesas?.numero} · {p.metodo === 'mixto' ? 'Mixto' : p.metodo}</span><strong>{money(p.monto)}</strong></div>
                   ))}
                 </div>
               </>
