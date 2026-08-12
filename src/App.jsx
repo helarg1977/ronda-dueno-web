@@ -116,7 +116,7 @@ function Login({ onLogin }) {
   )
 }
 
-function Dashboard({ usuario, onSalir }) {
+function Dashboard({ usuario, onSalir, modoSoporte }) {
   const [vista, setVista] = useState('panel') // panel | informes
   const [bar, setBar] = useState(null)
   const [mesas, setMesas] = useState([])
@@ -265,7 +265,12 @@ function Dashboard({ usuario, onSalir }) {
     if (!textoChat.trim() || !chatCanal) return
     const texto = textoChat.trim()
     setTextoChat('')
-    const { data, error } = await supabase.from('mensajes_chat').insert({ bar_id: usuario.bar_id, canal: chatCanal.canal, de: 'dueno', nombre: 'Dueño', texto }).select().single()
+    const { data, error } = await supabase.from('mensajes_chat').insert({
+      bar_id: usuario.bar_id, canal: chatCanal.canal,
+      de: modoSoporte ? 'soporte-ronda' : 'dueno',
+      nombre: modoSoporte ? 'Soporte Ronda' : 'Dueño',
+      texto,
+    }).select().single()
     if (!error) setMensajesChat((m) => [...m, data])
   }
 
@@ -663,7 +668,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
         </div>
       )}
       {verComoUsuario ? (
-        <Dashboard usuario={verComoUsuario} onSalir={async () => { await supabase.auth.signOut(); setVerComoUsuario(null) }} />
+        <Dashboard usuario={verComoUsuario} onSalir={async () => { await supabase.auth.signOut(); setVerComoUsuario(null) }} modoSoporte={true} />
       ) : (
       <>
       <header className="header">
