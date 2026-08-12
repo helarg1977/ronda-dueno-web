@@ -231,13 +231,25 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
     if (!detalle?.pedido) return
     const paso = SIGUIENTE_ESTADO[detalle.pedido.estado]
     if (!paso) return
-    await supabase.from('pedidos').update({ estado: paso.siguiente, updated_at: new Date().toISOString() }).eq('id', detalle.pedido.id)
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: paso.siguiente, updated_at: new Date().toISOString() })
+      .eq('id', detalle.pedido.id)
+      .eq('estado', detalle.pedido.estado)
+      .select()
+    if (error) { window.alert('No se pudo actualizar: ' + error.message); return }
+    if (!data || data.length === 0) {
+      window.alert('Este pedido ya cambió — alguien más (un mesero) ya lo actualizó.')
+      cargar()
+      return
+    }
     setDetalle(paso.siguiente === 'entregado' ? { ...detalle, pedido: null } : { ...detalle, pedido: { ...detalle.pedido, estado: paso.siguiente } })
     cargar()
   }
   async function confirmarPago() {
     if (!detalle?.pago) return
-    await supabase.from('pagos').update({ confirmado: true }).eq('id', detalle.pago.id)
+    const { error } = await supabase.from('pagos').update({ confirmado: true }).eq('id', detalle.pago.id)
+    if (error) { window.alert('No se pudo confirmar el pago: ' + error.message); return }
     setDetalle({ ...detalle, pago: { ...detalle.pago, confirmado: true } })
     cargar()
   }
@@ -603,9 +615,10 @@ function SuperAdminDashboard({ admin, onSalir }) {
   useEffect(() => { cargar() }, [cargar])
 
   async function togglePausa(bar) {
-    await supabase.rpc('admin_actualizar_bar', {
+    const { error } = await supabase.rpc('admin_actualizar_bar', {
       p_bar_id: bar.id, p_activo: !bar.activo, p_nombre: null, p_comision_pct: null,
     })
+    if (error) { window.alert('No se pudo actualizar: ' + error.message); return }
     cargar()
   }
 
