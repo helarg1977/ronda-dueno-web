@@ -107,7 +107,7 @@ function Login({ onLogin }) {
         <label>PIN</label>
         <div className="fila-pin">
           <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" type={verPin ? 'text' : 'password'} inputMode="numeric" />
-          <button type="button" className="boton-ojo" onClick={() => setVerPin(!verPin)}>{verPin ? '🙈' : '👁️'}</button>
+          <button type="button" className="boton-ojo" aria-label={verPin ? 'Ocultar PIN' : 'Mostrar PIN'} onClick={() => setVerPin(!verPin)}>{verPin ? '🙈' : '👁️'}</button>
         </div>
         {error && <p className="login-error">{error}</p>}
         <button className="btn-primario" disabled={cargando}>{cargando ? 'Entrando…' : 'Entrar'}</button>
@@ -227,6 +227,16 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
     setDetalle({ mesa, pedido: pedido || null, items, historial: historial || [], pago })
   }
 
+  async function cancelarPedidoActivo() {
+    if (!detalle?.pedido) return
+    if (!window.confirm('¿Cancelar este pedido? El cliente va a ver que se canceló.')) return
+    const { error: errorPago } = await supabase.from('pagos').delete().eq('pedido_id', detalle.pedido.id)
+    if (errorPago) { window.alert('No se pudo cancelar: ' + errorPago.message); return }
+    const { error } = await supabase.from('pedidos').update({ estado: 'cancelado' }).eq('id', detalle.pedido.id)
+    if (error) { window.alert('No se pudo cancelar: ' + error.message); return }
+    setDetalle(null)
+    cargar()
+  }
   async function avanzarEstado() {
     if (!detalle?.pedido) return
     const paso = SIGUIENTE_ESTADO[detalle.pedido.estado]
@@ -422,6 +432,9 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
                   <div key={it.id} className="item-fila"><span>{it.cantidad}x {it.productos?.nombre}</span><span>{money(it.precio_unitario * it.cantidad)}</span></div>
                 ))}
                 {SIGUIENTE_ESTADO[detalle.pedido.estado] && <button className="btn-primario" onClick={avanzarEstado}>{SIGUIENTE_ESTADO[detalle.pedido.estado].boton}</button>}
+                {detalle.pedido.estado === 'pendiente' && (
+                  <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c', marginTop: 8 }} onClick={cancelarPedidoActivo}>✕ Cancelar este pedido</button>
+                )}
                 {detalle.pago && (
                   <div className="pago-box">
                     <p className="subtitulo">Pago — {detalle.pago.metodo === 'mixto' ? 'Mixto' : detalle.pago.metodo}</p>
