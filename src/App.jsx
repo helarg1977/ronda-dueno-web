@@ -629,6 +629,8 @@ function Informes({ usuario }) {
 
 function SuperAdminDashboard({ admin, onSalir }) {
   const [bares, setBares] = useState([])
+  const [clientesGlobal, setClientesGlobal] = useState([])
+  const [pestanaAdmin, setPestanaAdmin] = useState('resumen') // resumen | bares | clientes | pagos
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState(null)
   const [nombreEdit, setNombreEdit] = useState('')
@@ -640,6 +642,8 @@ function SuperAdminDashboard({ admin, onSalir }) {
     setCargando(true)
     const { data, error } = await supabase.rpc('admin_listar_bares')
     if (!error) setBares(data || [])
+    const { data: clientesData } = await supabase.rpc('admin_listar_clientes')
+    setClientesGlobal(clientesData || [])
     const { data: anunciosData } = await supabase.from('anuncios_plataforma').select('id, mensaje, created_at').order('created_at', { ascending: false }).limit(10)
     setAnuncios(anunciosData || [])
     setCargando(false)
@@ -709,6 +713,49 @@ function SuperAdminDashboard({ admin, onSalir }) {
   const totalComisionGenerada = bares.reduce((s, b) => s + Number(b.comision_generada), 0)
   const totalComisionPagada = bares.reduce((s, b) => s + Number(b.comision_pagada), 0)
   const barMasProduce = [...bares].sort((a, b) => b.comision_generada - a.comision_generada)[0]
+  const baresSinPago = bares.filter((b) => b.activo && !b.tiene_metodo_pago)
+  const baresOrdenPorVentas = [...bares].sort((a, b) => b.ventas_totales - a.ventas_totales)
+
+  function nivelFidelidad(visitas) {
+    if (visitas >= 15) return { texto: '🥇 Oro', color: '#e0b94c' }
+    if (visitas >= 8) return { texto: '🥈 Plata', color: '#b0b0c0' }
+    if (visitas >= 3) return { texto: '🥉 Bronce', color: '#c97a4a' }
+    return { texto: 'Nuevo', color: 'var(--text-dim)' }
+  }
+
+  function descargarCSV(filas, columnas, nombreArchivo) {
+    const encabezado = columnas.map((c) => c.titulo).join(',')
+    const cuerpo = filas.map((f) => columnas.map((c) => `"${String(c.valor(f) ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\ufeff' + encabezado + '\n' + cuerpo], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const enlace = document.createElement('a')
+    enlace.href = url
+    enlace.download = nombreArchivo
+    enlace.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportarBares() {
+    descargarCSV(bares, [
+      { titulo: 'Nombre', valor: (b) => b.nombre },
+      { titulo: 'Dueño', valor: (b) => b.nombre_dueno },
+      { titulo: 'Celular', valor: (b) => b.telefono_dueno },
+      { titulo: 'Estado', valor: (b) => (b.activo ? 'Activo' : 'Pausado') },
+      { titulo: 'Mesas', valor: (b) => b.total_mesas },
+      { titulo: 'Ventas totales', valor: (b) => b.ventas_totales },
+      { titulo: 'Costo generado', valor: (b) => b.comision_generada },
+      { titulo: 'Ya pagado', valor: (b) => b.comision_pagada },
+    ], 'ronda-bares.csv')
+  }
+
+  function exportarPagos() {
+    descargarCSV(bares, [
+      { titulo: 'Bar', valor: (b) => b.nombre },
+      { titulo: 'Costo generado', valor: (b) => b.comision_generada },
+      { titulo: 'Ya pagado', valor: (b) => b.comision_pagada },
+      { titulo: 'Pendiente', valor: (b) => b.comision_generada - b.comision_pagada },
+    ], 'ronda-pagos.csv')
+  }
 
   return (
     <div className="app">
@@ -738,74 +785,145 @@ function SuperAdminDashboard({ admin, onSalir }) {
           <div className="stat-card"><div className="stat-valor">{money(totalComisionPagada)}</div><div className="stat-label">Ya pagado a Ronda</div></div>
         </div>
 
-        {barMasProduce && (
-          <div className="card" style={{ marginBottom: 24 }}>
-            <p className="subtitulo">🏆 El que más te produce</p>
-            <p>{barMasProduce.nombre} — {money(barMasProduce.comision_generada)} en costo por pedido generado</p>
-          </div>
+        <div className="chips-fila" style={{ marginTop: 16, marginBottom: 20 }}>
+          {[['resumen', '📊 Resumen'], ['bares', '🏪 Bares'], ['clientes', '👥 Clientes'], ['pagos', '💰 Pagos']].map(([id, label]) => (
+            <button key={id} className={`chip ${pestanaAdmin === id ? 'activo' : ''}`} onClick={() => setPestanaAdmin(id)}>{label}</button>
+          ))}
+        </div>
+
+        {cargando && <p className="vacio">Cargando…</p>}
+
+        {!cargando && pestanaAdmin === 'resumen' && (
+          <>
+            {baresSinPago.length > 0 && (
+              <div className="card" style={{ marginBottom: 16, borderColor: '#e0954c' }}>
+                <p className="subtitulo" style={{ color: '#e0954c' }}>⚠️ Bares activos sin método de pago (no pueden recibir transferencias)</p>
+                {baresSinPago.map((b) => <p key={b.id} style={{ margin: '4px 0' }}>{b.nombre}</p>)}
+              </div>
+            )}
+
+            {barMasProduce && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <p className="subtitulo">🏆 El que más te produce</p>
+                <p>{barMasProduce.nombre} — {money(barMasProduce.comision_generada)} en costo por pedido generado</p>
+              </div>
+            )}
+
+            <h2 className="seccion-titulo">🏅 Top bares por ventas</h2>
+            {baresOrdenPorVentas.slice(0, 10).map((b, i) => (
+              <div key={b.id} className="item-fila" style={{ background: 'var(--card)', borderRadius: 10, padding: '10px 14px', marginBottom: 6 }}>
+                <span><strong style={{ color: 'var(--accent)' }}>#{i + 1}</strong> &nbsp; {b.nombre}</span>
+                <strong>{money(b.ventas_totales)}</strong>
+              </div>
+            ))}
+
+            <h2 className="seccion-titulo" style={{ marginTop: 24 }}>🛠️ Herramientas rápidas</h2>
+            <div className="card" style={{ marginBottom: 8, cursor: 'pointer' }} onClick={() => window.open('https://wa.me/573133661600', '_blank')}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>💬 WhatsApp de soporte</span><span>→</span>
+              </div>
+            </div>
+            <div className="card" style={{ cursor: 'pointer' }} onClick={() => window.open('https://supabase.com/dashboard/project/yuucexxhecryveiqirsg', '_blank')}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>🗄️ Abrir Supabase Dashboard</span><span>→</span>
+              </div>
+            </div>
+          </>
         )}
 
-        <h2 className="seccion-titulo">Negocios vinculados</h2>
-        {cargando && <p className="vacio">Cargando…</p>}
-        {!cargando && bares.length === 0 && <p className="vacio">Todavía no hay bares registrados.</p>}
-        {bares.map((bar) => {
-          const pendiente = bar.comision_generada - bar.comision_pagada
-          return (
-            <div key={bar.id} className="card" style={{ marginBottom: 12 }}>
-              {editando === bar.id ? (
-                <>
-                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Nombre</label>
-                  <input className="chat-input" style={{ width: '100%', marginBottom: 10 }} value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn-primario" style={{ flex: 1 }} onClick={() => guardarEdicion(bar)}>Guardar</button>
-                    <button className="btn-secundario" onClick={() => setEditando(null)}>Cancelar</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: 17 }}>{bar.nombre}</strong>
-                    <span className="pill" style={{ background: bar.activo ? '#1a3a2a' : '#3a1a1a', color: bar.activo ? 'var(--exito)' : '#e05c5c' }}>
-                      {bar.activo ? 'Activo' : 'Pausado'}
-                    </span>
-                  </div>
-                  <div className="item-fila"><span>Dueño</span><strong>{bar.nombre_dueno || '—'}</strong></div>
-                  <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
-                  <div className="item-fila"><span>Mesas activas</span><strong>{bar.total_mesas}</strong></div>
-                  <div className="item-fila"><span>Ventas totales</span><strong>{money(bar.ventas_totales)}</strong></div>
-                  <div className="item-fila"><span>Costo por pedido generado</span><strong>{money(bar.comision_generada)}</strong></div>
-                  <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
-                  <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                    <button className="btn-secundario" onClick={() => verComoBar(bar)}>👁️ Ver como este negocio</button>
-                    <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
-                    <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
-                    <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => { setBarABorrar(bar); setTextoConfirmarBorrado('') }}>🗑️ Eliminar</button>
-                  </div>
-                </>
-              )}
-            </div>
-          )
-        })}
+        {!cargando && pestanaAdmin === 'bares' && (
+          <>
+            <button className="btn-secundario" style={{ marginBottom: 16 }} onClick={exportarBares}>⬇️ Exportar bares (CSV)</button>
+            {bares.length === 0 && <p className="vacio">Todavía no hay bares registrados.</p>}
+            {bares.map((bar) => {
+              const pendiente = bar.comision_generada - bar.comision_pagada
+              return (
+                <div key={bar.id} className="card" style={{ marginBottom: 12 }}>
+                  {editando === bar.id ? (
+                    <>
+                      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Nombre</label>
+                      <input className="chat-input" style={{ width: '100%', marginBottom: 10 }} value={nombreEdit} onChange={(e) => setNombreEdit(e.target.value)} />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn-primario" style={{ flex: 1 }} onClick={() => guardarEdicion(bar)}>Guardar</button>
+                        <button className="btn-secundario" onClick={() => setEditando(null)}>Cancelar</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ fontSize: 17 }}>{bar.nombre}</strong>
+                        <span className="pill" style={{ background: bar.activo ? '#1a3a2a' : '#3a1a1a', color: bar.activo ? 'var(--exito)' : '#e05c5c' }}>
+                          {bar.activo ? 'Activo' : 'Pausado'}
+                        </span>
+                      </div>
+                      {!bar.tiene_metodo_pago && (
+                        <div className="item-fila"><span style={{ color: '#e0954c' }}>⚠️ Sin método de pago configurado</span></div>
+                      )}
+                      <div className="item-fila"><span>Dueño</span><strong>{bar.nombre_dueno || '—'}</strong></div>
+                      <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
+                      <div className="item-fila"><span>Mesas activas</span><strong>{bar.total_mesas}</strong></div>
+                      <div className="item-fila"><span>Ventas totales</span><strong>{money(bar.ventas_totales)}</strong></div>
+                      <div className="item-fila"><span>Costo por pedido generado</span><strong>{money(bar.comision_generada)}</strong></div>
+                      <div className="item-fila"><span>Ya pagado</span><strong>{money(bar.comision_pagada)}</strong></div>
+                      <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        <button className="btn-secundario" onClick={() => verComoBar(bar)}>👁️ Ver como este negocio</button>
+                        <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
+                        <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
+                        <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => { setBarABorrar(bar); setTextoConfirmarBorrado('') }}>🗑️ Eliminar</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </>
+        )}
 
-        <h2 className="seccion-titulo">📢 Anuncios a todos los dueños</h2>
-        <div className="card" style={{ marginBottom: 16 }}>
-          <textarea
-            className="chat-input" style={{ width: '100%', minHeight: 70 }}
-            value={nuevoAnuncio} onChange={(e) => setNuevoAnuncio(e.target.value)}
-            placeholder="Ej: Este viernes actualizamos la app con mejoras nuevas 🎉"
-          />
-          <button className="btn-primario" style={{ marginTop: 8 }} onClick={publicarAnuncio}>Publicar anuncio</button>
-        </div>
-        {anuncios.map((a) => (
-          <div key={a.id} className="card" style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <p style={{ margin: 0 }}>{a.mensaje}</p>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>{new Date(a.created_at).toLocaleString('es-CO')}</p>
+        {!cargando && pestanaAdmin === 'clientes' && (
+          <>
+            <p className="vacio" style={{ textAlign: 'left', marginBottom: 12 }}>{clientesGlobal.length} cliente(s) en total, de todos los bares</p>
+            {clientesGlobal.map((c) => {
+              const nivel = nivelFidelidad(c.visitas)
+              return (
+                <div key={c.id} className="card" style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong>{c.nombre || 'Sin nombre'}</strong>
+                    <span className="pill" style={{ background: 'var(--bg-elevado)', color: nivel.color }}>{nivel.texto}</span>
+                  </div>
+                  <div className="item-fila"><span>Celular</span><strong>{c.telefono}</strong></div>
+                  <div className="item-fila"><span>Visitas</span><strong>{c.visitas}</strong></div>
+                  <div className="item-fila" style={{ borderBottom: 'none' }}><span>Bar</span><strong>{c.bar_nombre}</strong></div>
+                </div>
+              )
+            })}
+            {clientesGlobal.length === 0 && <p className="vacio">Todavía no hay clientes fidelizados en ningún bar.</p>}
+          </>
+        )}
+
+        {!cargando && pestanaAdmin === 'pagos' && (
+          <>
+            <button className="btn-secundario" style={{ marginBottom: 16 }} onClick={exportarPagos}>⬇️ Exportar pagos (CSV)</button>
+            <h2 className="seccion-titulo">📢 Anuncios a todos los dueños</h2>
+            <div className="card" style={{ marginBottom: 16 }}>
+              <textarea
+                className="chat-input" style={{ width: '100%', minHeight: 70 }}
+                value={nuevoAnuncio} onChange={(e) => setNuevoAnuncio(e.target.value)}
+                placeholder="Ej: Este viernes actualizamos la app con mejoras nuevas 🎉"
+              />
+              <button className="btn-primario" style={{ marginTop: 8 }} onClick={publicarAnuncio}>Publicar anuncio</button>
             </div>
-            <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => borrarAnuncio(a.id)}>🗑️</button>
-          </div>
-        ))}
+            {anuncios.map((a) => (
+              <div key={a.id} className="card" style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ margin: 0 }}>{a.mensaje}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>{new Date(a.created_at).toLocaleString('es-CO')}</p>
+                </div>
+                <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => borrarAnuncio(a.id)}>🗑️</button>
+              </div>
+            ))}
+          </>
+        )}
       </main>
       </>
       )}
