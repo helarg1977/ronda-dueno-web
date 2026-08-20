@@ -664,6 +664,17 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
   useEffect(() => { cargar() }, [cargar])
 
+  async function darDiasGracia(bar) {
+    const texto = window.prompt(`¿Cuántos días extra le quieres dar a "${bar.nombre}"?`, '7')
+    if (texto === null) return
+    const dias = parseInt(texto, 10)
+    if (!dias || dias <= 0) { window.alert('Escribe un número de días válido.'); return }
+    const { error } = await supabase.rpc('admin_dar_dias_gracia', { p_bar_id: bar.id, p_dias: dias })
+    if (error) { window.alert('No se pudo dar los días: ' + error.message); return }
+    window.alert(`Listo, le diste ${dias} día${dias !== 1 ? 's' : ''} extra a ${bar.nombre}.`)
+    cargar()
+  }
+
   async function togglePausa(bar) {
     const { error } = await supabase.rpc('admin_actualizar_bar', {
       p_bar_id: bar.id, p_activo: !bar.activo, p_nombre: null, p_comision_pct: null,
@@ -907,6 +918,9 @@ function SuperAdminDashboard({ admin, onSalir }) {
                       {textoEstadoPrueba(bar.dias_restantes_prueba) && (
                         <div className="item-fila"><span style={{ color: textoEstadoPrueba(bar.dias_restantes_prueba).color }}>⏳ Prueba: {textoEstadoPrueba(bar.dias_restantes_prueba).texto}</span></div>
                       )}
+                      {bar.dias_gracia_extra > 0 && (
+                        <div className="item-fila"><span style={{ color: 'var(--text-dim)' }}>🎁 Ya le diste {bar.dias_gracia_extra} día{bar.dias_gracia_extra !== 1 ? 's' : ''} extra en total</span></div>
+                      )}
                       <div className="item-fila"><span>Dueño</span><strong>{bar.nombre_dueno || '—'}</strong></div>
                       <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
                       <div className="item-fila"><span>Mesas activas</span><strong>{bar.total_mesas}</strong></div>
@@ -916,6 +930,7 @@ function SuperAdminDashboard({ admin, onSalir }) {
                       <div className="item-fila" style={{ borderBottom: 'none' }}><span>Pendiente por cobrar</span><strong style={{ color: pendiente > 0 ? '#e0b94c' : 'var(--exito)' }}>{money(pendiente)}</strong></div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                         <button className="btn-secundario" onClick={() => verComoBar(bar)}>👁️ Ver como este negocio</button>
+                        <button className="btn-secundario" onClick={() => darDiasGracia(bar)}>🎁 Dar días de gracia</button>
                         <button className="btn-secundario" onClick={() => abrirEdicion(bar)}>✏️ Editar</button>
                         <button className="btn-secundario" onClick={() => togglePausa(bar)}>{bar.activo ? '⏸️ Pausar' : '▶️ Activar'}</button>
                         <button className="btn-secundario" style={{ color: '#e05c5c', borderColor: '#e05c5c' }} onClick={() => { setBarABorrar(bar); setTextoConfirmarBorrado('') }}>🗑️ Eliminar</button>
