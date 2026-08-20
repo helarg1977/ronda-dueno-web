@@ -155,7 +155,7 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
   const [textoChat, setTextoChat] = useState('')
 
   const cargar = useCallback(async () => {
-    const { data: barData } = await supabase.from('bares').select('nombre').eq('id', usuario.bar_id).maybeSingle()
+    const { data: barData } = await supabase.from('bares').select('nombre, created_at').eq('id', usuario.bar_id).maybeSingle()
     setBar(barData)
 
     const { data: mesasData } = await supabase.from('mesas').select('id, numero, sesion_actual, mesero_asignado_id, qr_code').eq('bar_id', usuario.bar_id).eq('activa', true).order('numero')
@@ -336,6 +336,19 @@ function Dashboard({ usuario, onSalir, modoSoporte }) {
           <button className="btn-secundario" onClick={onSalir}>Salir</button>
         </div>
       </header>
+
+      {bar?.created_at && (() => {
+        const diasTranscurridos = Math.floor((Date.now() - new Date(bar.created_at).getTime()) / (1000 * 60 * 60 * 24))
+        const diasRestantes = 30 - diasTranscurridos
+        if (diasRestantes > 7) return null
+        return (
+          <div className="banner-anuncio" style={{ background: diasRestantes >= 0 ? '#3a2a12' : '#3a1a1a', color: diasRestantes >= 0 ? '#e0954c' : '#e05c5c' }}>
+            {diasRestantes >= 0
+              ? `⏳ Tu prueba gratis vence en ${diasRestantes} día${diasRestantes !== 1 ? 's' : ''} — escríbenos si tienes dudas`
+              : `⚠️ Tu prueba gratis venció hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) !== 1 ? 's' : ''} — sigues con acceso completo, escríbenos cuando puedas`}
+          </div>
+        )
+      })()}
 
       {anuncioPlataforma && (
         <div className="banner-anuncio" style={{ background: '#1a2e26', color: '#3ecf8e' }}>
@@ -714,6 +727,14 @@ function SuperAdminDashboard({ admin, onSalir }) {
   const totalComisionPagada = bares.reduce((s, b) => s + Number(b.comision_pagada), 0)
   const barMasProduce = [...bares].sort((a, b) => b.comision_generada - a.comision_generada)[0]
   const baresSinPago = bares.filter((b) => b.activo && !b.tiene_metodo_pago)
+  const baresPruebaPorVencer = bares.filter((b) => b.activo && b.dias_restantes_prueba <= 7 && b.dias_restantes_prueba >= 0)
+  const baresPruebaVencida = bares.filter((b) => b.activo && b.dias_restantes_prueba < 0)
+
+  function textoEstadoPrueba(dias) {
+    if (dias > 7) return null
+    if (dias >= 0) return { texto: `Vence en ${dias} día${dias !== 1 ? 's' : ''}`, color: '#e0954c' }
+    return { texto: `Vencida hace ${Math.abs(dias)} día${Math.abs(dias) !== 1 ? 's' : ''}`, color: '#e05c5c' }
+  }
   const baresOrdenPorVentas = [...bares].sort((a, b) => b.ventas_totales - a.ventas_totales)
 
   function nivelFidelidad(visitas) {
@@ -795,6 +816,30 @@ function SuperAdminDashboard({ admin, onSalir }) {
 
         {!cargando && pestanaAdmin === 'resumen' && (
           <>
+            {(baresPruebaPorVencer.length > 0 || baresPruebaVencida.length > 0) && (
+              <div className="card" style={{ marginBottom: 16, borderColor: '#e05c5c' }}>
+                <p className="subtitulo" style={{ color: '#e05c5c' }}>⏳ Pruebas gratis por vencer o vencidas</p>
+                {baresPruebaVencida.map((b) => (
+                  <div key={b.id} className="item-fila">
+                    <span>{b.nombre}</span>
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <strong style={{ color: '#e05c5c' }}>Vencida hace {Math.abs(b.dias_restantes_prueba)}d</strong>
+                      {b.telefono_dueno && <a href={`https://wa.me/57${b.telefono_dueno}?text=${encodeURIComponent(`Hola ${b.nombre_dueno || ''}! 👋 Vi que tu prueba de Ronda en "${b.nombre}" ya venció. ¿Hablamos de cómo seguir?`)}`} target="_blank" rel="noreferrer" className="btn-secundario" style={{ padding: '4px 10px', fontSize: 12 }}>💬</a>}
+                    </span>
+                  </div>
+                ))}
+                {baresPruebaPorVencer.map((b) => (
+                  <div key={b.id} className="item-fila">
+                    <span>{b.nombre}</span>
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <strong style={{ color: '#e0954c' }}>Vence en {b.dias_restantes_prueba}d</strong>
+                      {b.telefono_dueno && <a href={`https://wa.me/57${b.telefono_dueno}?text=${encodeURIComponent(`Hola ${b.nombre_dueno || ''}! 👋 Tu prueba de Ronda en "${b.nombre}" está por vencer en ${b.dias_restantes_prueba} días. ¿Hablamos?`)}`} target="_blank" rel="noreferrer" className="btn-secundario" style={{ padding: '4px 10px', fontSize: 12 }}>💬</a>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {baresSinPago.length > 0 && (
               <div className="card" style={{ marginBottom: 16, borderColor: '#e0954c' }}>
                 <p className="subtitulo" style={{ color: '#e0954c' }}>⚠️ Bares activos sin método de pago (no pueden recibir transferencias)</p>
@@ -858,6 +903,9 @@ function SuperAdminDashboard({ admin, onSalir }) {
                       </div>
                       {!bar.tiene_metodo_pago && (
                         <div className="item-fila"><span style={{ color: '#e0954c' }}>⚠️ Sin método de pago configurado</span></div>
+                      )}
+                      {textoEstadoPrueba(bar.dias_restantes_prueba) && (
+                        <div className="item-fila"><span style={{ color: textoEstadoPrueba(bar.dias_restantes_prueba).color }}>⏳ Prueba: {textoEstadoPrueba(bar.dias_restantes_prueba).texto}</span></div>
                       )}
                       <div className="item-fila"><span>Dueño</span><strong>{bar.nombre_dueno || '—'}</strong></div>
                       <div className="item-fila"><span>Celular del dueño</span><strong>{bar.telefono_dueno || '—'}</strong></div>
